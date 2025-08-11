@@ -11,6 +11,7 @@ const int OBJECT_DETECTED = LOW;
 const unsigned long DOOR_MOVE_DURATION = 10000; // 10 seconds for the door to fully open or close
 const unsigned long DOOR_CLOSE_DELAY = 10000;   // 10 seconds to wait before closing the door
 const unsigned long RELAY_PULSE_DURATION = 200; // 200ms pulse for Shelly relay trigger
+const unsigned long OBJECT_DETECTION_DURATION = 500; // Object must be present for this long to trigger open
 
 // --- Door State Machine ---
 enum DoorState {
@@ -24,6 +25,7 @@ enum DoorState {
 DoorState currentDoorState = DOOR_CLOSED;
 unsigned long stateChangeTimestamp = 0;
 unsigned long closeTimerTimestamp = 0;
+unsigned long objectFirstDetectedTimestamp = 0; // For debouncing the open trigger
 
 // --- Non-blocking Pulse Management ---
 bool openRelayPulseActive = false;
@@ -58,9 +60,23 @@ void loop() {
 
   switch (currentDoorState) {
     case DOOR_CLOSED:
+      // This state uses a timer to ensure the object is consistently detected
+      // before triggering the door, preventing false opens.
       if (objectDetected) {
+        // If this is the first moment we've seen an object, start the timer.
+        if (objectFirstDetectedTimestamp == 0) {
+          objectFirstDetectedTimestamp = millis();
+        }
+      } else {
+        // If the object is gone, reset the timer.
+        objectFirstDetectedTimestamp = 0;
+      }
+
+      // If the timer has been running for the required duration, open the door.
+      if (objectFirstDetectedTimestamp != 0 && (millis() - objectFirstDetectedTimestamp >= OBJECT_DETECTION_DURATION)) {
         changeState(DOOR_OPENING);
         triggerRelay(RELAY_OPEN_PIN); // Send a pulse to open
+        objectFirstDetectedTimestamp = 0; // Reset the timer for the next cycle
       }
       break;
 
