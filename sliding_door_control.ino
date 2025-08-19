@@ -1,13 +1,18 @@
+#include <Wire.h>
+#include <RTClib.h>
+
+RTC_DS3231 rtc; // Create an RTC object
+
 // --- Pin Definitions ---
-const int PHOTOCELL_PIN_1 = 2; // Input from the first photocell
-const int PHOTOCELL_PIN_2 = 3; // Input from the second photocell
-const int RELAY_OPEN_PIN = 4;  // Output to the relay that opens the door
-const int RELAY_CLOSE_PIN = 5; // Output to the relay that closes the door
-const int MAIN_DOOR_SENSOR_PIN = 6; // Input from the main door's magnetic contact switch
+const int PHOTOCELL_PIN_1 = 2;
+const int PHOTOCELL_PIN_2 = 3;
+const int RELAY_OPEN_PIN = 4;
+const int RELAY_CLOSE_PIN = 5;
+const int MAIN_DOOR_SENSOR_PIN = 6;
 
 // --- Sensor Logic Level ---
 const int OBJECT_DETECTED = LOW;
-const int MAIN_DOOR_IS_OPEN = LOW; // Magnetic switch pulls pin LOW when door opens
+const int MAIN_DOOR_IS_OPEN = LOW;
 
 // --- Time Constants (in milliseconds) ---
 const unsigned long DOOR_MOVE_DURATION = 10000;
@@ -15,34 +20,42 @@ const unsigned long DOOR_CLOSE_DELAY = 10000;
 const unsigned long RELAY_PULSE_DURATION = 200;
 const unsigned long OBJECT_DETECTION_DURATION = 500;
 
-// --- Door State Machine ---
-enum DoorState {
-  DOOR_CLOSED,
-  DOOR_OPENING,
-  DOOR_OPEN,
-  DOOR_CLOSING
-};
+// --- Night Lock Configuration ---
+const int NIGHT_LOCK_START_HOUR = 22; // 10 PM
+const int NIGHT_LOCK_END_HOUR = 5;    // 5 AM
 
-// --- Global Variables ---
+// --- Door State Machine & Global Variables ---
+enum DoorState { DOOR_CLOSED, DOOR_OPENING, DOOR_OPEN, DOOR_CLOSING };
 DoorState currentDoorState = DOOR_CLOSED;
 unsigned long stateChangeTimestamp = 0;
 unsigned long closeTimerTimestamp = 0;
 unsigned long objectFirstDetectedTimestamp = 0;
-
-// --- Non-blocking Pulse Management ---
 bool openRelayPulseActive = false;
 unsigned long openRelayPulseStart = 0;
 bool closeRelayPulseActive = false;
 unsigned long closeRelayPulseStart = 0;
 
+
 void setup() {
   Serial.begin(9600);
+
+  // --- Initialize RTC ---
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC!");
+    Serial.flush();
+    abort();
+  }
+  // The following line should be run ONCE to set the time.
+  // After running it once, comment it out and re-upload.
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+  // --- Pin Setup ---
   pinMode(PHOTOCELL_PIN_1, INPUT_PULLUP);
   pinMode(PHOTOCELL_PIN_2, INPUT_PULLUP);
-  pinMode(MAIN_DOOR_SENSOR_PIN, INPUT_PULLUP); // Enable pull-up for the switch
+  pinMode(MAIN_DOOR_SENSOR_PIN, INPUT_PULLUP);
   pinMode(RELAY_OPEN_PIN, OUTPUT);
   pinMode(RELAY_CLOSE_PIN, OUTPUT);
-  
+
   digitalWrite(RELAY_OPEN_PIN, HIGH);
   digitalWrite(RELAY_CLOSE_PIN, HIGH);
 
@@ -60,22 +73,28 @@ void loop() {
     closeRelayPulseActive = false;
   }
 
-  // --- High-Priority Master Door Check ---
-  if (digitalRead(MAIN_DOOR_SENSOR_PIN) == MAIN_DOOR_IS_OPEN) {
-    // If the main door is open, the sliding door MUST be closed.
-    // This overrides all other logic.
+  // --- HIGHEST Priority: Night Lock Check ---
+  if (isNightLockActive()) {
     if (currentDoorState == DOOR_OPEN || currentDoorState == DOOR_OPENING) {
-      Serial.println("Main door opened! Overriding and closing sliding door.");
+      Serial.println("Night lock active! Closing door.");
       changeState(DOOR_CLOSING);
       triggerRelay(RELAY_CLOSE_PIN);
     }
-    // By returning here, we skip the entire photocell logic below.
+    return; // Ignore all other sensors
+  }
+
+  // --- High-Priority Master Door Check ---
+  if (digitalRead(MAIN_DOOR_SENSOR_PIN) == MAIN_DOOR_IS_OPEN) {
+    if (currentDoorState == DOOR_OPEN || currentDoorState == DOOR_OPENING) {
+      Serial.println("Main door opened! Closing sliding door.");
+      changeState(DOOR_CLOSING);
+      triggerRelay(RELAY_CLOSE_PIN);
+    }
     return;
   }
 
-  // --- Normal Operation (runs only if main door is closed) ---
+  // --- Normal Operation ---
   bool objectDetected = isObjectDetected();
-
   switch (currentDoorState) {
     case DOOR_CLOSED:
       if (objectDetected) {
@@ -91,13 +110,11 @@ void loop() {
         objectFirstDetectedTimestamp = 0;
       }
       break;
-
     case DOOR_OPENING:
       if (millis() - stateChangeTimestamp >= DOOR_MOVE_DURATION) {
         changeState(DOOR_OPEN);
       }
       break;
-
     case DOOR_OPEN:
       if (objectDetected) {
         closeTimerTimestamp = 0;
@@ -112,10 +129,7 @@ void loop() {
         }
       }
       break;
-
     case DOOR_CLOSING:
-      // We add a check here to ensure the safety override for photocells
-      // does NOT run if the main door is open.
       if (objectDetected) {
         changeState(DOOR_OPENING);
         triggerRelay(RELAY_OPEN_PIN);
@@ -129,10 +143,15 @@ void loop() {
 }
 
 // --- Helper Functions ---
+bool isNightLockActive() {
+  DateTime now = rtc.now();
+  int currentHour = now.hour();
+  return (currentHour >= NIGHT_LOCK_START_HOUR || currentHour < NIGHT_LOCK_END_HOUR);
+}
+
 bool isObjectDetected() {
   return (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED || digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED);
 }
-
 void triggerRelay(int pin) {
   if (pin == RELAY_OPEN_PIN && !openRelayPulseActive) {
     digitalWrite(RELAY_OPEN_PIN, LOW);
@@ -144,7 +163,6 @@ void triggerRelay(int pin) {
     closeRelayPulseStart = millis();
   }
 }
-
 void changeState(DoorState newState) {
   currentDoorState = newState;
   stateChangeTimestamp = millis();
