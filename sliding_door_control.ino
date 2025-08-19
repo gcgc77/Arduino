@@ -12,13 +12,13 @@ const int MAIN_DOOR_SENSOR_PIN = 6;
 
 // --- Sensor Logic Level ---
 const int OBJECT_DETECTED = LOW;
-const int MAIN_DOOR_IS_OPEN = LOW;
+const int MAIN_DOOR_IS_OPEN = HIGH;
 
 // --- Time Constants (in milliseconds) ---
 const unsigned long DOOR_MOVE_DURATION = 10000;
 const unsigned long DOOR_CLOSE_DELAY = 10000;
 const unsigned long RELAY_PULSE_DURATION = 200;
-const unsigned long OBJECT_DETECTION_DURATION = 500;
+const unsigned long OBJECT_DETECTION_DURATION = 250;
 
 // --- Night Lock Configuration ---
 const int NIGHT_LOCK_START_HOUR = 22; // 10 PM
