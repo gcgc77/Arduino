@@ -12,13 +12,14 @@ const int MAIN_DOOR_SENSOR_PIN = 6;
 
 // --- Sensor Logic Level ---
 const int OBJECT_DETECTED = LOW;
-const int MAIN_DOOR_IS_OPEN = LOW;
+const int MAIN_DOOR_IS_OPEN = HIGH; // Corrected for NC switch
 
 // --- Time Constants (in milliseconds) ---
 const unsigned long DOOR_MOVE_DURATION = 10000;
 const unsigned long DOOR_CLOSE_DELAY = 10000;
 const unsigned long RELAY_PULSE_DURATION = 200;
-const unsigned long OBJECT_DETECTION_DURATION = 500;
+const unsigned long PHOTOCELL_1_DETECTION_DURATION = 250; // New independent timer
+const unsigned long PHOTOCELL_2_DETECTION_DURATION = 250; // New independent timer
 
 // --- Night Lock Configuration ---
 const int NIGHT_LOCK_START_HOUR = 22; // 10 PM
@@ -29,7 +30,10 @@ enum DoorState { DOOR_CLOSED, DOOR_OPENING, DOOR_OPEN, DOOR_CLOSING };
 DoorState currentDoorState = DOOR_CLOSED;
 unsigned long stateChangeTimestamp = 0;
 unsigned long closeTimerTimestamp = 0;
-unsigned long objectFirstDetectedTimestamp = 0;
+unsigned long photocell1FirstDetectedTimestamp = 0; // New independent timer
+unsigned long photocell2FirstDetectedTimestamp = 0; // New independent timer
+
+// --- Non-blocking Pulse Management ---
 bool openRelayPulseActive = false;
 unsigned long openRelayPulseStart = 0;
 bool closeRelayPulseActive = false;
@@ -45,8 +49,6 @@ void setup() {
     Serial.flush();
     abort();
   }
-  // The following line should be run ONCE to set the time.
-  // After running it once, comment it out and re-upload.
   // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 
   // --- Pin Setup ---
@@ -80,7 +82,7 @@ void loop() {
       changeState(DOOR_CLOSING);
       triggerRelay(RELAY_CLOSE_PIN);
     }
-    return; // Ignore all other sensors
+    return;
   }
 
   // --- High-Priority Master Door Check ---
@@ -94,20 +96,45 @@ void loop() {
   }
 
   // --- Normal Operation ---
-  bool objectDetected = isObjectDetected();
   switch (currentDoorState) {
     case DOOR_CLOSED:
-      if (objectDetected) {
-        if (objectFirstDetectedTimestamp == 0) {
-          objectFirstDetectedTimestamp = millis();
+      { // Braces to create a local scope for these variables
+        bool photocell1_detected = (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED);
+        bool photocell2_detected = (digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED);
+
+        // Manage Timer for Photocell 1
+        if (photocell1_detected) {
+          if (photocell1FirstDetectedTimestamp == 0) {
+            photocell1FirstDetectedTimestamp = millis();
+          }
+        } else {
+          photocell1FirstDetectedTimestamp = 0;
         }
-      } else {
-        objectFirstDetectedTimestamp = 0;
-      }
-      if (objectFirstDetectedTimestamp != 0 && (millis() - objectFirstDetectedTimestamp >= OBJECT_DETECTION_DURATION)) {
-        changeState(DOOR_OPENING);
-        triggerRelay(RELAY_OPEN_PIN);
-        objectFirstDetectedTimestamp = 0;
+
+        // Manage Timer for Photocell 2
+        if (photocell2_detected) {
+          if (photocell2FirstDetectedTimestamp == 0) {
+            photocell2FirstDetectedTimestamp = millis();
+          }
+        } else {
+          photocell2FirstDetectedTimestamp = 0;
+        }
+
+        // Check if either timer has met its condition
+        bool triggerOpen = false;
+        if (photocell1FirstDetectedTimestamp != 0 && (millis() - photocell1FirstDetectedTimestamp >= PHOTOCELL_1_DETECTION_DURATION)) {
+          triggerOpen = true;
+        }
+        if (!triggerOpen && photocell2FirstDetectedTimestamp != 0 && (millis() - photocell2FirstDetectedTimestamp >= PHOTOCELL_2_DETECTION_DURATION)) {
+          triggerOpen = true;
+        }
+
+        if (triggerOpen) {
+          changeState(DOOR_OPENING);
+          triggerRelay(RELAY_OPEN_PIN);
+          photocell1FirstDetectedTimestamp = 0;
+          photocell2FirstDetectedTimestamp = 0;
+        }
       }
       break;
     case DOOR_OPENING:
@@ -116,7 +143,7 @@ void loop() {
       }
       break;
     case DOOR_OPEN:
-      if (objectDetected) {
+      if (isObjectDetected()) { // For keeping door open, either sensor is fine
         closeTimerTimestamp = 0;
       } else {
         if (closeTimerTimestamp == 0) {
@@ -130,7 +157,7 @@ void loop() {
       }
       break;
     case DOOR_CLOSING:
-      if (objectDetected) {
+      if (isObjectDetected()) { // Safety interrupt is instant
         changeState(DOOR_OPENING);
         triggerRelay(RELAY_OPEN_PIN);
       } else {
