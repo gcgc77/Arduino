@@ -16,7 +16,7 @@ const int MAIN_DOOR_IS_OPEN = HIGH; // Corrected for NC switch
 
 // --- Time Constants (in milliseconds) ---
 const unsigned long DOOR_MOVE_DURATION = 10000;
-const unsigned long DOOR_CLOSE_DELAY = 10000;
+const unsigned long DOOR_CLOSE_DELAY = 14000; // Increased as requested
 const unsigned long RELAY_PULSE_DURATION = 200;
 const unsigned long PHOTOCELL_1_DETECTION_DURATION = 250; // New independent timer
 const unsigned long PHOTOCELL_2_DETECTION_DURATION = 250; // New independent timer
