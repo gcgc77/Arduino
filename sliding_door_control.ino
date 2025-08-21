@@ -1,32 +1,23 @@
-#include <Wire.h>
-#include <RTClib.h>
-
-RTC_DS3231 rtc; // Create an RTC object
-
 // --- Pin Definitions ---
 const int PHOTOCELL_PIN_1 = 2;
 const int PHOTOCELL_PIN_2 = 3;
 const int RELAY_OPEN_PIN = 4;
 const int RELAY_CLOSE_PIN = 5;
 const int MAIN_DOOR_SENSOR_PIN = 6;
-const int SLIDING_DOOR_OPEN_SENSOR_PIN = 7; // New failsafe sensor
+const int SLIDING_DOOR_OPEN_SENSOR_PIN = 7;
 
 // --- Sensor Logic Level ---
 const int OBJECT_DETECTED = LOW;
 const int MAIN_DOOR_IS_OPEN = HIGH;
-const int SLIDING_DOOR_IS_OPEN = LOW; // Assuming NC switch logic (LOW when open)
+const int SLIDING_DOOR_IS_OPEN = LOW;
 
 // --- Time Constants (in milliseconds) ---
 const unsigned long DOOR_MOVE_DURATION = 10000;
-const unsigned long DOOR_CLOSE_DELAY = 14000;
+const unsigned long DOOR_CLOSE_DELAY = 25000; // Updated to 25 seconds
 const unsigned long RELAY_PULSE_DURATION = 200;
 const unsigned long PHOTOCELL_1_DETECTION_DURATION = 250;
 const unsigned long PHOTOCELL_2_DETECTION_DURATION = 250;
-const unsigned long FAILSAFE_CLOSE_DELAY = 30000; // New failsafe timer
-
-// --- Night Lock Configuration ---
-const int NIGHT_LOCK_START_HOUR = 22;
-const int NIGHT_LOCK_END_HOUR = 5;
+const unsigned long FAILSAFE_CLOSE_DELAY = 30000;
 
 // --- Door State Machine & Global Variables ---
 enum DoorState { DOOR_CLOSED, DOOR_OPENING, DOOR_OPEN, DOOR_CLOSING };
@@ -35,7 +26,7 @@ unsigned long stateChangeTimestamp = 0;
 unsigned long closeTimerTimestamp = 0;
 unsigned long photocell1FirstDetectedTimestamp = 0;
 unsigned long photocell2FirstDetectedTimestamp = 0;
-unsigned long failsafeTimerTimestamp = 0; // New failsafe timer
+unsigned long failsafeTimerTimestamp = 0;
 
 // --- Non-blocking Pulse Management ---
 bool openRelayPulseActive = false;
@@ -47,18 +38,11 @@ unsigned long closeRelayPulseStart = 0;
 void setup() {
   Serial.begin(9600);
 
-  if (!rtc.begin()) {
-    Serial.println("Couldn't find RTC!");
-    Serial.flush();
-    abort();
-  }
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-
   // --- Pin Setup ---
   pinMode(PHOTOCELL_PIN_1, INPUT_PULLUP);
   pinMode(PHOTOCELL_PIN_2, INPUT_PULLUP);
   pinMode(MAIN_DOOR_SENSOR_PIN, INPUT_PULLUP);
-  pinMode(SLIDING_DOOR_OPEN_SENSOR_PIN, INPUT_PULLUP); // New failsafe sensor
+  pinMode(SLIDING_DOOR_OPEN_SENSOR_PIN, INPUT_PULLUP);
   pinMode(RELAY_OPEN_PIN, OUTPUT);
   pinMode(RELAY_CLOSE_PIN, OUTPUT);
 
@@ -79,17 +63,7 @@ void loop() {
     closeRelayPulseActive = false;
   }
 
-  // --- HIGHEST Priority: Night Lock Check ---
-  if (isNightLockActive()) {
-    if (currentDoorState == DOOR_OPEN || currentDoorState == DOOR_OPENING) {
-      Serial.println("Night lock active! Closing door.");
-      changeState(DOOR_CLOSING);
-      triggerRelay(RELAY_CLOSE_PIN);
-    }
-    return;
-  }
-
-  // --- 2nd Priority: Failsafe Watchdog Timer ---
+  // --- 1st Priority: Failsafe Watchdog Timer ---
   if (digitalRead(SLIDING_DOOR_OPEN_SENSOR_PIN) == SLIDING_DOOR_IS_OPEN) {
     if (failsafeTimerTimestamp == 0) {
       failsafeTimerTimestamp = millis();
@@ -103,10 +77,10 @@ void loop() {
       }
     }
   } else {
-    failsafeTimerTimestamp = 0; // Reset if door is not open
+    failsafeTimerTimestamp = 0;
   }
 
-  // --- 3rd Priority: Master Door Check ---
+  // --- 2nd Priority: Master Door Check ---
   if (digitalRead(MAIN_DOOR_SENSOR_PIN) == MAIN_DOOR_IS_OPEN) {
     if (currentDoorState == DOOR_OPEN || currentDoorState == DOOR_OPENING) {
       Serial.println("Main door opened! Closing sliding door.");
@@ -188,12 +162,6 @@ void loop() {
 }
 
 // --- Helper Functions ---
-bool isNightLockActive() {
-  DateTime now = rtc.now();
-  int currentHour = now.hour();
-  return (currentHour >= NIGHT_LOCK_START_HOUR || currentHour < NIGHT_LOCK_END_HOUR);
-}
-
 bool isObjectDetected() {
   return (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED || digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED);
 }
