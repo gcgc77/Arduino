@@ -23,6 +23,7 @@ The system is designed to control a sliding door that is embedded within a large
 *   **2x E18-D80NK Photocells** (or similar 5V digital IR proximity sensors)
 *   **1x 2-Channel 5V Relay Module** (must be Active-LOW)
 *   **1x Magnetic Contact Switch** (for the main door sensor, "Normally Closed" type recommended for current code)
+*   **1x Magnetic Contact Switch** (for the sliding door failsafe sensor)
 *   **1x DS3231 Real-Time Clock (RTC) Module**
 *   **Jumper Wires**
 *   **1x Breadboard** (recommended for easily sharing power connections)
@@ -44,6 +45,8 @@ It is recommended to use a breadboard to distribute power (`5V`) and ground (`GN
 |                           | `IN1`            | `Digital Pin 4`        | Controls the "Open" relay           |
 |                           | `IN2`            | `Digital Pin 5`        | Controls the "Close" relay          |
 | **Main Door Sensor**      | `Wire 1`         | `Digital Pin 6`        | Polarity does not matter            |
+| (Magnetic Switch)         | `Wire 2`         | `GND`                  | Connect to the common ground rail   |
+| **Sliding Door Sensor**   | `Wire 1`         | `Digital Pin 7`        | Failsafe sensor, polarity does not matter |
 | (Magnetic Switch)         | `Wire 2`         | `GND`                  | Connect to the common ground rail   |
 | **DS3231 RTC Module**     | `VCC`            | `5V`                   | Connect to the 5V power rail        |
 |                           | `GND`            | `GND`                  | Connect to the common ground rail   |
@@ -77,9 +80,11 @@ The main sketch file has several constants at the top that you can change to eas
 | Constant Name                      | Default Value | Description                                                                 |
 | ---------------------------------- | ------------- | --------------------------------------------------------------------------- |
 | `MAIN_DOOR_IS_OPEN`                | `HIGH`        | Set to `HIGH` for Normally Closed (NC) switches, `LOW` for Normally Open (NO). |
+| `SLIDING_DOOR_IS_OPEN`             | `LOW`         | Logic for the failsafe sensor. `LOW` for NO switches, `HIGH` for NC.        |
 | `DOOR_MOVE_DURATION`               | `10000`       | The time (in ms) it takes for the door to fully open or close.                |
 | `DOOR_CLOSE_DELAY`                 | `14000`       | The time (in ms) to wait before closing the door after an object is gone.     |
 | `PHOTOCELL_1_DETECTION_DURATION`   | `250`         | The time (in ms) an object must be seen by photocell 1 to trigger opening.  |
 | `PHOTOCELL_2_DETECTION_DURATION`   | `250`         | The time (in ms) an object must be seen by photocell 2 to trigger opening.  |
+| `FAILSAFE_CLOSE_DELAY`             | `30000`       | The time (in ms) the door can be open before the failsafe forces it to close. |
 | `NIGHT_LOCK_START_HOUR`            | `22`          | The hour (0-23) when the nighttime lock engages. (10 PM)                      |
 | `NIGHT_LOCK_END_HOUR`              | `5`           | The hour (0-23) when the nighttime lock disengages. (5 AM)                    |
