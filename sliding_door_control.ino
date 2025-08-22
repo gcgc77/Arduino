@@ -4,12 +4,10 @@ const int PHOTOCELL_PIN_2 = 3;
 const int RELAY_OPEN_PIN = 4;
 const int RELAY_CLOSE_PIN = 5;
 const int MAIN_DOOR_SENSOR_PIN = 6;
-const int SLIDING_DOOR_OPEN_SENSOR_PIN = 7;
 
 // --- Sensor Logic Level ---
 const int OBJECT_DETECTED = LOW;
 const int MAIN_DOOR_IS_OPEN = HIGH;
-const int SLIDING_DOOR_IS_OPEN = LOW;
 
 // --- Time Constants (in milliseconds) ---
 const unsigned long DOOR_MOVE_DURATION = 10000;
@@ -17,7 +15,6 @@ const unsigned long DOOR_CLOSE_DELAY = 25000;
 const unsigned long RELAY_PULSE_DURATION = 200;
 const unsigned long PHOTOCELL_1_DETECTION_DURATION = 250;
 const unsigned long PHOTOCELL_2_DETECTION_DURATION = 250;
-const unsigned long FAILSAFE_CLOSE_DELAY = 30000;
 
 // --- Door State Machine & Global Variables ---
 enum DoorState { DOOR_CLOSED, DOOR_OPENING, DOOR_OPEN, DOOR_CLOSING };
@@ -26,8 +23,7 @@ unsigned long stateChangeTimestamp = 0;
 unsigned long closeTimerTimestamp = 0;
 unsigned long photocell1FirstDetectedTimestamp = 0;
 unsigned long photocell2FirstDetectedTimestamp = 0;
-unsigned long failsafeTimerTimestamp = 0;
-unsigned long dynamicOpenDuration = DOOR_MOVE_DURATION; // For proportional reopening
+unsigned long dynamicOpenDuration = DOOR_MOVE_DURATION;
 
 // --- Non-blocking Pulse Management ---
 bool openRelayPulseActive = false;
@@ -43,7 +39,6 @@ void setup() {
   pinMode(PHOTOCELL_PIN_1, INPUT_PULLUP);
   pinMode(PHOTOCELL_PIN_2, INPUT_PULLUP);
   pinMode(MAIN_DOOR_SENSOR_PIN, INPUT_PULLUP);
-  pinMode(SLIDING_DOOR_OPEN_SENSOR_PIN, INPUT_PULLUP);
   pinMode(RELAY_OPEN_PIN, OUTPUT);
   pinMode(RELAY_CLOSE_PIN, OUTPUT);
 
@@ -64,24 +59,7 @@ void loop() {
     closeRelayPulseActive = false;
   }
 
-  // --- 1st Priority: Failsafe Watchdog Timer ---
-  if (digitalRead(SLIDING_DOOR_OPEN_SENSOR_PIN) == SLIDING_DOOR_IS_OPEN) {
-    if (failsafeTimerTimestamp == 0) {
-      failsafeTimerTimestamp = millis();
-    }
-    if (millis() - failsafeTimerTimestamp >= FAILSAFE_CLOSE_DELAY) {
-      if (currentDoorState != DOOR_CLOSING) {
-        Serial.println("Failsafe triggered! Forcing door to close.");
-        changeState(DOOR_CLOSING);
-        triggerRelay(RELAY_CLOSE_PIN);
-        failsafeTimerTimestamp = 0;
-      }
-    }
-  } else {
-    failsafeTimerTimestamp = 0;
-  }
-
-  // --- 2nd Priority: Master Door Check ---
+  // --- High-Priority: Master Door Check ---
   if (digitalRead(MAIN_DOOR_SENSOR_PIN) == MAIN_DOOR_IS_OPEN) {
     if (currentDoorState == DOOR_OPEN || currentDoorState == DOOR_OPENING) {
       Serial.println("Main door opened! Closing sliding door.");
@@ -123,7 +101,7 @@ void loop() {
         }
 
         if (triggerOpen) {
-          dynamicOpenDuration = DOOR_MOVE_DURATION; // Use full time for a normal open
+          dynamicOpenDuration = DOOR_MOVE_DURATION;
           changeState(DOOR_OPENING);
           triggerRelay(RELAY_OPEN_PIN);
           photocell1FirstDetectedTimestamp = 0;
@@ -132,9 +110,9 @@ void loop() {
       }
       break;
     case DOOR_OPENING:
-      if (millis() - stateChangeTimestamp >= dynamicOpenDuration) { // Use dynamic duration
+      if (millis() - stateChangeTimestamp >= dynamicOpenDuration) {
         changeState(DOOR_OPEN);
-        dynamicOpenDuration = DOOR_MOVE_DURATION; // Reset to default after opening
+        dynamicOpenDuration = DOOR_MOVE_DURATION;
       }
       break;
     case DOOR_OPEN:
@@ -154,7 +132,7 @@ void loop() {
     case DOOR_CLOSING:
       if (isObjectDetected()) {
         unsigned long timeSpentClosing = millis() - stateChangeTimestamp;
-        dynamicOpenDuration = timeSpentClosing; // Set proportional opening time
+        dynamicOpenDuration = timeSpentClosing;
         changeState(DOOR_OPENING);
         triggerRelay(RELAY_OPEN_PIN);
       } else {
