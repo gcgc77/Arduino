@@ -15,6 +15,7 @@ The system is designed to control a sliding door that is embedded within a large
 *   **Main Door Override:** A sensor on the larger, main door will force the sliding door to close immediately if the main door is opened.
 *   **Pulse-Based Relay Control:** The code sends short pulses to the relays, making it compatible with smart relays or standard relay modules.
 *   **Support for Active-LOW Relays:** The logic is configured to work with common Active-LOW relay modules.
+*   **Precise Motor Control:** Sends a second pulse at the end of the opening sequence to reliably stop the motor. The closing sequence is allowed to run to completion, relying on the motor's internal end-stop.
 
 ## 3. Required Hardware
 
@@ -53,5 +54,22 @@ The main sketch file has several constants at the top that you can change to eas
 | `MAIN_DOOR_IS_OPEN`                | `HIGH`        | Set to `HIGH` for Normally Closed (NC) switches, `LOW` for Normally Open (NO). |
 | `DOOR_MOVE_DURATION`               | `10000`       | The time (in ms) it takes for the door to fully open or close.                |
 | `DOOR_CLOSE_DELAY`                 | `25000`       | The time (in ms) to wait before closing the door after an object is gone.     |
-| `PHOTOCELL_1_DETECTION_DURATION`   | `250`         | The time (in ms) an object must be seen by photocell 1 to trigger opening.  |
-| `PHOTOCELL_2_DETECTION_DURATION`   | `250`         | The time (in ms) an object must be seen by photocell 2 to trigger opening.  |
+| `PHOTOCELL_1_DETECTION_DURATION`   | `200`         | The time (in ms) an object must be seen by photocell 1 to trigger opening.  |
+| `PHOTOCELL_2_DETECTION_DURATION`   | `200`         | The time (in ms) an object must be seen by photocell 2 to trigger opening.  |
+
+## 6. Troubleshooting Shelly Relay Issues
+
+If the door motor behaves unexpectedly (e.g., doesn't stop, or stops and immediately restarts), the issue is almost always in the configuration of the Shelly relay, not the Arduino code.
+
+**Symptom:** The door does not stop moving when the Arduino sends a "stop" pulse (even though you hear the relay click).
+
+**Solution:** This typically happens if the Shelly's internal **"Max Opening Time"** safety timer is shorter than the Arduino's `DOOR_MOVE_DURATION`.
+1.  In the Shelly's settings, find the timer or calibration section.
+2.  Ensure the **"Max Opening Time"** is set to be **longer** than the `DOOR_MOVE_DURATION` in the Arduino code (which is 10 seconds by default). This allows the Arduino to be in control of the timing.
+
+**Symptom:** The door stops briefly, then immediately starts again.
+
+**Solution:** This is caused by the **"Button Type"** setting in the Shelly.
+1.  In the Shelly's settings, find the **"Button Type"**.
+2.  It must be set to a mode where each pulse is a single, distinct action. Depending on your Shelly model and firmware, this could be **"Toggle Switch"** (if it cycles Open->Stop->Close->Stop) or **"Momentary"**.
+3.  Avoid "Edge Switch" mode, which can trigger on both the press and release of the pulse, causing the restart issue.

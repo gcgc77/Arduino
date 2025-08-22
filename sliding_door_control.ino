@@ -13,8 +13,8 @@ const int MAIN_DOOR_IS_OPEN = HIGH;
 const unsigned long DOOR_MOVE_DURATION = 10000;
 const unsigned long DOOR_CLOSE_DELAY = 25000;
 const unsigned long RELAY_PULSE_DURATION = 200;
-const unsigned long PHOTOCELL_1_DETECTION_DURATION = 250;
-const unsigned long PHOTOCELL_2_DETECTION_DURATION = 250;
+const unsigned long PHOTOCELL_1_DETECTION_DURATION = 200;
+const unsigned long PHOTOCELL_2_DETECTION_DURATION = 200;
 
 // --- Door State Machine & Global Variables ---
 enum DoorState { DOOR_CLOSED, DOOR_OPENING, DOOR_OPEN, DOOR_CLOSING };
@@ -23,7 +23,8 @@ unsigned long stateChangeTimestamp = 0;
 unsigned long closeTimerTimestamp = 0;
 unsigned long photocell1FirstDetectedTimestamp = 0;
 unsigned long photocell2FirstDetectedTimestamp = 0;
-unsigned long dynamicOpenDuration = DOOR_MOVE_DURATION;
+bool isReversing = false;
+unsigned long reversalEndTime = 0;
 
 // --- Non-blocking Pulse Management ---
 bool openRelayPulseActive = false;
@@ -34,22 +35,18 @@ unsigned long closeRelayPulseStart = 0;
 
 void setup() {
   Serial.begin(9600);
-
-  // --- Pin Setup ---
   pinMode(PHOTOCELL_PIN_1, INPUT_PULLUP);
   pinMode(PHOTOCELL_PIN_2, INPUT_PULLUP);
   pinMode(MAIN_DOOR_SENSOR_PIN, INPUT_PULLUP);
   pinMode(RELAY_OPEN_PIN, OUTPUT);
   pinMode(RELAY_CLOSE_PIN, OUTPUT);
-
   digitalWrite(RELAY_OPEN_PIN, HIGH);
   digitalWrite(RELAY_CLOSE_PIN, HIGH);
-
   Serial.println("Sliding Door Controller Initialized.");
 }
 
 void loop() {
-  // --- Manage active relay pulses ---
+  // Pulse management logic
   if (openRelayPulseActive && (millis() - openRelayPulseStart >= RELAY_PULSE_DURATION)) {
     digitalWrite(RELAY_OPEN_PIN, HIGH);
     openRelayPulseActive = false;
@@ -59,39 +56,31 @@ void loop() {
     closeRelayPulseActive = false;
   }
 
-  // --- High-Priority: Master Door Check ---
+  // High-Priority: Master Door Check
   if (digitalRead(MAIN_DOOR_SENSOR_PIN) == MAIN_DOOR_IS_OPEN) {
     if (currentDoorState == DOOR_OPEN || currentDoorState == DOOR_OPENING) {
-      Serial.println("Main door opened! Closing sliding door.");
       changeState(DOOR_CLOSING);
       triggerRelay(RELAY_CLOSE_PIN);
     }
     return;
   }
 
-  // --- Normal Operation ---
+  // Normal Operation
   switch (currentDoorState) {
     case DOOR_CLOSED:
       {
         bool photocell1_detected = (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED);
         bool photocell2_detected = (digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED);
-
         if (photocell1_detected) {
-          if (photocell1FirstDetectedTimestamp == 0) {
-            photocell1FirstDetectedTimestamp = millis();
-          }
+          if (photocell1FirstDetectedTimestamp == 0) photocell1FirstDetectedTimestamp = millis();
         } else {
           photocell1FirstDetectedTimestamp = 0;
         }
-
         if (photocell2_detected) {
-          if (photocell2FirstDetectedTimestamp == 0) {
-            photocell2FirstDetectedTimestamp = millis();
-          }
+          if (photocell2FirstDetectedTimestamp == 0) photocell2FirstDetectedTimestamp = millis();
         } else {
           photocell2FirstDetectedTimestamp = 0;
         }
-
         bool triggerOpen = false;
         if (photocell1FirstDetectedTimestamp != 0 && (millis() - photocell1FirstDetectedTimestamp >= PHOTOCELL_1_DETECTION_DURATION)) {
           triggerOpen = true;
@@ -99,9 +88,8 @@ void loop() {
         if (!triggerOpen && photocell2FirstDetectedTimestamp != 0 && (millis() - photocell2FirstDetectedTimestamp >= PHOTOCELL_2_DETECTION_DURATION)) {
           triggerOpen = true;
         }
-
         if (triggerOpen) {
-          dynamicOpenDuration = DOOR_MOVE_DURATION;
+          isReversing = false;
           changeState(DOOR_OPENING);
           triggerRelay(RELAY_OPEN_PIN);
           photocell1FirstDetectedTimestamp = 0;
@@ -110,9 +98,17 @@ void loop() {
       }
       break;
     case DOOR_OPENING:
-      if (millis() - stateChangeTimestamp >= dynamicOpenDuration) {
-        changeState(DOOR_OPEN);
-        dynamicOpenDuration = DOOR_MOVE_DURATION;
+      if (isReversing) {
+        if (millis() >= reversalEndTime) {
+          triggerRelay(RELAY_OPEN_PIN); // Send STOP pulse
+          isReversing = false;
+          changeState(DOOR_OPEN);
+        }
+      } else {
+        if (millis() - stateChangeTimestamp >= DOOR_MOVE_DURATION) {
+          triggerRelay(RELAY_OPEN_PIN); // Send STOP pulse
+          changeState(DOOR_OPEN);
+        }
       }
       break;
     case DOOR_OPEN:
@@ -131,12 +127,15 @@ void loop() {
       break;
     case DOOR_CLOSING:
       if (isObjectDetected()) {
+        triggerRelay(RELAY_CLOSE_PIN);
         unsigned long timeSpentClosing = millis() - stateChangeTimestamp;
-        dynamicOpenDuration = timeSpentClosing;
+        reversalEndTime = millis() + timeSpentClosing;
+        isReversing = true;
         changeState(DOOR_OPENING);
         triggerRelay(RELAY_OPEN_PIN);
       } else {
         if (millis() - stateChangeTimestamp >= DOOR_MOVE_DURATION) {
+          // No stop pulse is sent here, allowing Shelly to stop it
           changeState(DOOR_CLOSED);
         }
       }
@@ -148,7 +147,6 @@ void loop() {
 bool isObjectDetected() {
   return (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED || digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED);
 }
-
 void triggerRelay(int pin) {
   if (pin == RELAY_OPEN_PIN && !openRelayPulseActive) {
     digitalWrite(RELAY_OPEN_PIN, LOW);
@@ -160,7 +158,6 @@ void triggerRelay(int pin) {
     closeRelayPulseStart = millis();
   }
 }
-
 void changeState(DoorState newState) {
   currentDoorState = newState;
   stateChangeTimestamp = millis();
