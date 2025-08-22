@@ -13,7 +13,7 @@ const int SLIDING_DOOR_IS_OPEN = LOW;
 
 // --- Time Constants (in milliseconds) ---
 const unsigned long DOOR_MOVE_DURATION = 10000;
-const unsigned long DOOR_CLOSE_DELAY = 25000; // Updated to 25 seconds
+const unsigned long DOOR_CLOSE_DELAY = 25000;
 const unsigned long RELAY_PULSE_DURATION = 200;
 const unsigned long PHOTOCELL_1_DETECTION_DURATION = 250;
 const unsigned long PHOTOCELL_2_DETECTION_DURATION = 250;
@@ -27,6 +27,7 @@ unsigned long closeTimerTimestamp = 0;
 unsigned long photocell1FirstDetectedTimestamp = 0;
 unsigned long photocell2FirstDetectedTimestamp = 0;
 unsigned long failsafeTimerTimestamp = 0;
+unsigned long dynamicOpenDuration = DOOR_MOVE_DURATION; // For proportional reopening
 
 // --- Non-blocking Pulse Management ---
 bool openRelayPulseActive = false;
@@ -122,6 +123,7 @@ void loop() {
         }
 
         if (triggerOpen) {
+          dynamicOpenDuration = DOOR_MOVE_DURATION; // Use full time for a normal open
           changeState(DOOR_OPENING);
           triggerRelay(RELAY_OPEN_PIN);
           photocell1FirstDetectedTimestamp = 0;
@@ -130,8 +132,9 @@ void loop() {
       }
       break;
     case DOOR_OPENING:
-      if (millis() - stateChangeTimestamp >= DOOR_MOVE_DURATION) {
+      if (millis() - stateChangeTimestamp >= dynamicOpenDuration) { // Use dynamic duration
         changeState(DOOR_OPEN);
+        dynamicOpenDuration = DOOR_MOVE_DURATION; // Reset to default after opening
       }
       break;
     case DOOR_OPEN:
@@ -150,6 +153,8 @@ void loop() {
       break;
     case DOOR_CLOSING:
       if (isObjectDetected()) {
+        unsigned long timeSpentClosing = millis() - stateChangeTimestamp;
+        dynamicOpenDuration = timeSpentClosing; // Set proportional opening time
         changeState(DOOR_OPENING);
         triggerRelay(RELAY_OPEN_PIN);
       } else {

@@ -11,7 +11,7 @@ The system is designed to control a sliding door that is embedded within a large
 *   **Automatic Opening:** The door opens automatically when an object is detected by one of two photocell sensors.
 *   **Configurable Detection Time:** To prevent false triggers, the door only opens after an object has been detected for a configurable amount of time. Each photocell has its own independent timer.
 *   **Timed Auto-Close:** The door automatically closes after being open for a set period if no objects are detected.
-*   **Safety Interrupt:** If an object is detected by the photocells while the door is closing, it will immediately stop and reopen.
+*   **Proportional Safety Reversal:** If an object is detected while the door is closing, it will immediately reverse and open for the same amount of time that it was closing, ensuring a fast and efficient reversal.
 *   **Main Door Override:** A sensor on the larger, main door will force the sliding door to close immediately if the main door is opened.
 *   **Failsafe Watchdog Timer:** A dedicated sensor on the sliding door itself ensures it will automatically close if it's been left open for an extended period, preventing it from getting stuck open.
 *   **Pulse-Based Relay Control:** The code sends short pulses to the relays, making it compatible with smart relays or standard relay modules.
