@@ -1,6 +1,7 @@
 // --- Pin Definitions ---
 const int PHOTOCELL_PIN_1 = 2;
 const int PHOTOCELL_PIN_2 = 3;
+const int PHOTOCELL_PIN_3 = 8; // New long-range photocell
 const int RELAY_OPEN_PIN = 4;
 const int RELAY_CLOSE_PIN = 5;
 const int MAIN_DOOR_SENSOR_PIN = 6;
@@ -15,6 +16,7 @@ const unsigned long DOOR_CLOSE_DELAY = 25000;
 const unsigned long RELAY_PULSE_DURATION = 200;
 const unsigned long PHOTOCELL_1_DETECTION_DURATION = 200;
 const unsigned long PHOTOCELL_2_DETECTION_DURATION = 200;
+const unsigned long PHOTOCELL_3_DETECTION_DURATION = 200; // Timer for new sensor
 
 // --- Door State Machine & Global Variables ---
 enum DoorState { DOOR_CLOSED, DOOR_OPENING, DOOR_OPEN, DOOR_CLOSING };
@@ -23,6 +25,7 @@ unsigned long stateChangeTimestamp = 0;
 unsigned long closeTimerTimestamp = 0;
 unsigned long photocell1FirstDetectedTimestamp = 0;
 unsigned long photocell2FirstDetectedTimestamp = 0;
+unsigned long photocell3FirstDetectedTimestamp = 0; // Timer for new sensor
 bool isReversing = false;
 unsigned long reversalEndTime = 0;
 
@@ -37,6 +40,7 @@ void setup() {
   Serial.begin(9600);
   pinMode(PHOTOCELL_PIN_1, INPUT_PULLUP);
   pinMode(PHOTOCELL_PIN_2, INPUT_PULLUP);
+  pinMode(PHOTOCELL_PIN_3, INPUT_PULLUP); // New sensor
   pinMode(MAIN_DOOR_SENSOR_PIN, INPUT_PULLUP);
   pinMode(RELAY_OPEN_PIN, OUTPUT);
   pinMode(RELAY_CLOSE_PIN, OUTPUT);
@@ -71,6 +75,9 @@ void loop() {
       {
         bool photocell1_detected = (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED);
         bool photocell2_detected = (digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED);
+        bool photocell3_detected = (digitalRead(PHOTOCELL_PIN_3) == OBJECT_DETECTED);
+
+        // Manage Timers
         if (photocell1_detected) {
           if (photocell1FirstDetectedTimestamp == 0) photocell1FirstDetectedTimestamp = millis();
         } else {
@@ -81,6 +88,13 @@ void loop() {
         } else {
           photocell2FirstDetectedTimestamp = 0;
         }
+        if (photocell3_detected) {
+          if (photocell3FirstDetectedTimestamp == 0) photocell3FirstDetectedTimestamp = millis();
+        } else {
+          photocell3FirstDetectedTimestamp = 0;
+        }
+
+        // Check if any timer has met its condition
         bool triggerOpen = false;
         if (photocell1FirstDetectedTimestamp != 0 && (millis() - photocell1FirstDetectedTimestamp >= PHOTOCELL_1_DETECTION_DURATION)) {
           triggerOpen = true;
@@ -88,25 +102,30 @@ void loop() {
         if (!triggerOpen && photocell2FirstDetectedTimestamp != 0 && (millis() - photocell2FirstDetectedTimestamp >= PHOTOCELL_2_DETECTION_DURATION)) {
           triggerOpen = true;
         }
+        if (!triggerOpen && photocell3FirstDetectedTimestamp != 0 && (millis() - photocell3FirstDetectedTimestamp >= PHOTOCELL_3_DETECTION_DURATION)) {
+          triggerOpen = true;
+        }
+
         if (triggerOpen) {
           isReversing = false;
           changeState(DOOR_OPENING);
           triggerRelay(RELAY_OPEN_PIN);
           photocell1FirstDetectedTimestamp = 0;
           photocell2FirstDetectedTimestamp = 0;
+          photocell3FirstDetectedTimestamp = 0;
         }
       }
       break;
     case DOOR_OPENING:
       if (isReversing) {
         if (millis() >= reversalEndTime) {
-          triggerRelay(RELAY_OPEN_PIN); // Send STOP pulse
+          triggerRelay(RELAY_OPEN_PIN);
           isReversing = false;
           changeState(DOOR_OPEN);
         }
       } else {
         if (millis() - stateChangeTimestamp >= DOOR_MOVE_DURATION) {
-          triggerRelay(RELAY_OPEN_PIN); // Send STOP pulse
+          triggerRelay(RELAY_OPEN_PIN);
           changeState(DOOR_OPEN);
         }
       }
@@ -135,7 +154,6 @@ void loop() {
         triggerRelay(RELAY_OPEN_PIN);
       } else {
         if (millis() - stateChangeTimestamp >= DOOR_MOVE_DURATION) {
-          // No stop pulse is sent here, allowing Shelly to stop it
           changeState(DOOR_CLOSED);
         }
       }
@@ -145,7 +163,10 @@ void loop() {
 
 // --- Helper Functions ---
 bool isObjectDetected() {
-  return (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED || digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED);
+  // Check all three sensors
+  return (digitalRead(PHOTOCELL_PIN_1) == OBJECT_DETECTED ||
+          digitalRead(PHOTOCELL_PIN_2) == OBJECT_DETECTED ||
+          digitalRead(PHOTOCELL_PIN_3) == OBJECT_DETECTED);
 }
 void triggerRelay(int pin) {
   if (pin == RELAY_OPEN_PIN && !openRelayPulseActive) {
