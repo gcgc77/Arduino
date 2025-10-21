@@ -4,9 +4,11 @@
 # This script finds all .zip files in the current directory. For each .zip file,
 # it extracts the contents, renames each file (including files in subdirectories)
 # by adding the .zip filename as a prefix followed by a dash, and then creates a
-# new .cbz archive with the renamed files. The new archive will have the suffix
-# "-renamed". The script is designed to be robust, ensuring that temporary files
-# are cleaned up even if errors occur.
+# new archive.
+# To work around a limitation in PowerShell's Compress-Archive command, the
+# script first creates a .zip file and then renames it to .cbz.
+# The new archive will have the suffix "-renamed". The script is designed to be
+# robust, ensuring that temporary files are cleaned up even if errors occur.
 #
 # Usage:
 # 1. Open a PowerShell terminal.
@@ -37,9 +39,13 @@ foreach ($zipFile in $zipFiles) {
             Rename-Item -Path $file.FullName -NewName $newName
         }
 
-        # Create a new .cbz archive with the renamed files
+        # Create a new .zip archive with the renamed files
+        $newZipPath = Join-Path -Path $zipFile.DirectoryName -ChildPath "$($zipFile.BaseName)-renamed.zip"
+        Compress-Archive -Path "$($tempDir.FullName)\*" -DestinationPath $newZipPath
+
+        # Rename the new archive to .cbz
         $newCbzPath = Join-Path -Path $zipFile.DirectoryName -ChildPath "$($zipFile.BaseName)-renamed.cbz"
-        Compress-Archive -Path "$($tempDir.FullName)\*" -DestinationPath $newCbzPath
+        Rename-Item -Path $newZipPath -NewName $newCbzPath
     }
     finally {
         # Clean up the temporary directory if it was created
