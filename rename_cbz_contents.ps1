@@ -24,7 +24,14 @@
 
 # --- Phase 1: Get and Sort All Input .zip Files ---
 $folderName = (Get-Location).Path | Split-Path -Leaf
-$allZipFiles = Get-ChildItem -Path . -Filter *.zip | Sort-Object Name
+# Sort files using natural number sorting to handle chapter numbers correctly (e.g., 10, 11, 100)
+$allZipFiles = Get-ChildItem -Path . -Filter *.zip | Sort-Object @{Expression={
+    if ($_.BaseName -match ' (\d+)$') {
+        [int]$matches[1]
+    } else {
+        $_.BaseName # Fallback for files that don't end with <space><number>
+    }
+}}
 
 # Create a unique name for the main temporary directory
 $mainTempDirName = [System.IO.Path]::GetRandomFileName()
