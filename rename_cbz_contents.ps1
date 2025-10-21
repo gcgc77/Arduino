@@ -11,7 +11,8 @@
 # 4. After processing all .zip files, it gets a single, alphabetically sorted
 #    list of all the renamed files.
 # 5. It then creates multiple .cbz archives, named "VOLUME_X.cbz", where X is a
-#    sequential number. Each archive contains a batch of 10 files.
+#    sequential number. Each archive contains a batch of up to 10 files from
+#    the sorted collection.
 #
 # To work around a limitation in PowerShell's Compress-Archive command, the
 # script first creates a .zip file for each volume and then renames it to .cbz.
@@ -56,22 +57,29 @@ try {
     $allRenamedFiles = Get-ChildItem -Path $mainTempDir.FullName -File | Sort-Object Name
 
     # --- Phase 3: Create Batched Volume Archives ---
-    $volumeCounter = 1
-    $filesPerVolume = 10
-    for ($i = 0; $i -lt $allRenamedFiles.Count; $i += $filesPerVolume) {
-        $volumeTempDir = New-Item -ItemType Directory -Path (Join-Path $mainTempDir.FullName "VOLUME_$volumeCounter")
-        $filesToMove = $allRenamedFiles[$i..($i + $filesPerVolume - 1)]
-        foreach ($fileToMove in $filesToMove) {
-            Move-Item -Path $fileToMove.FullName -Destination $volumeTempDir.FullName
+    if ($allRenamedFiles.Count -gt 0) {
+        $volumeCounter = 1
+        $filesPerVolume = 10
+        for ($i = 0; $i -lt $allRenamedFiles.Count; $i += $filesPerVolume) {
+            # Create a temporary subdirectory for this volume's contents
+            $volumeContentDir = New-Item -ItemType Directory -Path (Join-Path $mainTempDir.FullName "VOLUME_$volumeCounter")
+
+            # Select the next batch of files to move
+            $filesToMove = $allRenamedFiles[$i..([System.Math]::Min($i + $filesPerVolume - 1, $allRenamedFiles.Count - 1))]
+            foreach ($fileToMove in $filesToMove) {
+                Move-Item -Path $fileToMove.FullName -Destination $volumeContentDir.FullName
+            }
+
+            # Create the .zip archive
+            $volumeZipPath = Join-Path -Path $zipFiles[0].DirectoryName -ChildPath "VOLUME_$($volumeCounter).zip"
+            Compress-Archive -Path "$($volumeContentDir.FullName)\*" -DestinationPath $volumeZipPath
+
+            # Rename it to .cbz
+            $newCbzName = "VOLUME_$($volumeCounter).cbz"
+            Rename-Item -Path $volumeZipPath -NewName $newCbzName
+
+            $volumeCounter++
         }
-
-        $volumeZipPath = Join-Path -Path $zipFiles[0].DirectoryName -ChildPath "VOLUME_$($volumeCounter).zip"
-        Compress-Archive -Path "$($volumeTempDir.FullName)\*" -DestinationPath $volumeZipPath
-
-        $newCbzName = "VOLUME_$($volumeCounter).cbz"
-        Rename-Item -Path $volumeZipPath -NewName $newCbzName
-
-        $volumeCounter++
     }
 }
 finally {
