@@ -10,18 +10,20 @@
 # 4. To prevent file name conflicts, each extracted file is renamed to include
 #    the name of its original .zip archive as a prefix.
 # 5. The entire collection of renamed files for that chunk is then archived into
-#    a single file named "VOLUME_X.cbz", where X is a sequential number.
+#    a single file. The final filenames include the name of the folder where
+#    the script is run, e.g., "Comics_VOLUME_1.cbz".
 #
-# Example: 35 .zip files will result in 4 output files:
-# - VOLUME_1.cbz (contains contents of zip files 1-10)
-# - VOLUME_2.cbz (contains contents of zip files 11-20)
-# - VOLUME_3.cbz (contains contents of zip files 21-30)
-# - VOLUME_4.cbz (contains contents of zip files 31-35)
+# Example: 35 .zip files in a folder named "MyComics" will result in 4 files:
+# - MyComics_VOLUME_1.cbz (contains contents of zips 1-10)
+# - MyComics_VOLUME_2.cbz (contains contents of zips 11-20)
+# - MyComics_VOLUME_3.cbz (contains contents of zips 21-30)
+# - MyComics_VOLUME_4.cbz (contains contents of zips 31-35)
 #
 # The script uses a main temporary directory for all operations and ensures
 # it is cleaned up at the end, even if errors occur.
 
 # --- Phase 1: Get and Sort All Input .zip Files ---
+$folderName = (Get-Location).Path | Split-Path -Leaf
 $allZipFiles = Get-ChildItem -Path . -Filter *.zip | Sort-Object Name
 
 # Create a unique name for the main temporary directory
@@ -60,11 +62,11 @@ try {
             }
 
             # Create the .zip archive for the volume
-            $volumeZipPath = Join-Path -Path $allZipFiles[0].DirectoryName -ChildPath "VOLUME_$($volumeCounter).zip"
+            $volumeZipPath = Join-Path -Path $allZipFiles[0].DirectoryName -ChildPath "$($folderName)_VOLUME_$($volumeCounter).zip"
             Compress-Archive -Path "$($volumeStagingDir.FullName)\*" -DestinationPath $volumeZipPath
 
             # Rename it to .cbz
-            $newCbzName = "VOLUME_$($volumeCounter).cbz"
+            $newCbzName = "$($folderName)_VOLUME_$($volumeCounter).cbz"
             Rename-Item -Path $volumeZipPath -NewName $newCbzName
 
             $volumeCounter++
