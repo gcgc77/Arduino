@@ -1,14 +1,22 @@
-# PowerShell script to rename files inside a .zip archive and save as .cbz.
+# PowerShell script to aggregate and volume-package comic archives.
 #
 # Description:
-# This script finds all .zip files in the current directory. For each .zip file,
-# it extracts the contents, renames each file (including files in subdirectories)
-# by adding the .zip filename as a prefix followed by a dash, and then creates a
-# new archive.
+# This script finds all .zip files in the current directory, treating them as
+# comic book archives. It performs the following steps:
+# 1. Creates a single temporary directory to act as a staging area.
+# 2. For each .zip file, it extracts its contents and renames every file by
+#    prefixing it with the name of its original .zip archive to prevent name
+#    collisions.
+# 3. All renamed files are collected into the main staging directory.
+# 4. After processing all .zip files, it gets a single, alphabetically sorted
+#    list of all the renamed files.
+# 5. It then creates multiple .cbz archives, named "VOLUME_X.cbz", where X is a
+#    sequential number. Each archive contains a batch of 10 files.
+#
 # To work around a limitation in PowerShell's Compress-Archive command, the
-# script first creates a .zip file and then renames it to .cbz.
-# The new archive will have the suffix "-renamed". The script is designed to be
-# robust, ensuring that temporary files are cleaned up even if errors occur.
+# script first creates a .zip file for each volume and then renames it to .cbz.
+# The script is designed to be robust, ensuring that all temporary files are
+# cleaned up at the end, even if errors occur.
 #
 # Usage:
 # 1. Open a PowerShell terminal.
@@ -18,39 +26,57 @@
 # Get all .zip files in the current directory
 $zipFiles = Get-ChildItem -Path . -Filter *.zip
 
-foreach ($zipFile in $zipFiles) {
-    $tempDir = $null
-    try {
-        # Create a temporary directory, forcing it to overwrite if it exists
-        $tempDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ($zipFile.BaseName)) -Force
+# Create a unique name for the main temporary directory
+$mainTempDirName = [System.IO.Path]::GetRandomFileName()
+$mainTempDir = $null
 
-        # Extract the .zip file
-        Expand-Archive -Path $zipFile.FullName -DestinationPath $tempDir.FullName
+try {
+    # Create a single main temporary directory to aggregate all files
+    $mainTempDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP $mainTempDirName) -Force
 
-        # Get the base name of the .zip file
-        $prefix = $zipFile.BaseName
+    # --- Phase 1: Extract and Rename All Files ---
+    foreach ($zipFile in $zipFiles) {
+        # Create a temporary subdirectory for this specific zip to avoid name conflicts during extraction
+        $subTempDir = New-Item -ItemType Directory -Path (Join-Path $mainTempDir.FullName $zipFile.BaseName)
 
-        # Get all extracted files recursively
-        $extractedFiles = Get-ChildItem -Path $tempDir.FullName -Recurse -File
+        # Extract the archive
+        Expand-Archive -Path $zipFile.FullName -DestinationPath $subTempDir.FullName
 
+        # Rename and move files to the main temp directory
+        $extractedFiles = Get-ChildItem -Path $subTempDir.FullName -Recurse -File
         foreach ($file in $extractedFiles) {
-            # Rename the file
-            $newName = "$prefix-$($file.Name)"
-            Rename-Item -Path $file.FullName -NewName $newName
+            $newName = "$($zipFile.BaseName)-$($file.Name)"
+            Move-Item -Path $file.FullName -Destination (Join-Path $mainTempDir.FullName $newName)
         }
-
-        # Create a new .zip archive with the renamed files
-        $newZipPath = Join-Path -Path $zipFile.DirectoryName -ChildPath "$($zipFile.BaseName)-renamed.zip"
-        Compress-Archive -Path "$($tempDir.FullName)\*" -DestinationPath $newZipPath
-
-        # Rename the new archive to .cbz
-        $newCbzPath = Join-Path -Path $zipFile.DirectoryName -ChildPath "$($zipFile.BaseName)-renamed.cbz"
-        Rename-Item -Path $newZipPath -NewName $newCbzPath
+        # Clean up the empty subdirectory
+        Remove-Item -Path $subTempDir.FullName -Recurse
     }
-    finally {
-        # Clean up the temporary directory if it was created
-        if ($tempDir -and (Test-Path $tempDir.FullName)) {
-            Remove-Item -Path $tempDir.FullName -Recurse -Force
+
+    # --- Phase 2: Sort All Aggregated Files ---
+    $allRenamedFiles = Get-ChildItem -Path $mainTempDir.FullName -File | Sort-Object Name
+
+    # --- Phase 3: Create Batched Volume Archives ---
+    $volumeCounter = 1
+    $filesPerVolume = 10
+    for ($i = 0; $i -lt $allRenamedFiles.Count; $i += $filesPerVolume) {
+        $volumeTempDir = New-Item -ItemType Directory -Path (Join-Path $mainTempDir.FullName "VOLUME_$volumeCounter")
+        $filesToMove = $allRenamedFiles[$i..($i + $filesPerVolume - 1)]
+        foreach ($fileToMove in $filesToMove) {
+            Move-Item -Path $fileToMove.FullName -Destination $volumeTempDir.FullName
         }
+
+        $volumeZipPath = Join-Path -Path $zipFiles[0].DirectoryName -ChildPath "VOLUME_$($volumeCounter).zip"
+        Compress-Archive -Path "$($volumeTempDir.FullName)\*" -DestinationPath $volumeZipPath
+
+        $newCbzName = "VOLUME_$($volumeCounter).cbz"
+        Rename-Item -Path $volumeZipPath -NewName $newCbzName
+
+        $volumeCounter++
+    }
+}
+finally {
+    # Clean up the main temporary directory if it was created
+    if ($mainTempDir -and (Test-Path $mainTempDir.FullName)) {
+        Remove-Item -Path $mainTempDir.FullName -Recurse -Force
     }
 }
