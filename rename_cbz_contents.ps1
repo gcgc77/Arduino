@@ -1,28 +1,28 @@
-# PowerShell script to rename files inside a .cbz archive.
+# PowerShell script to rename files inside a .zip archive.
 #
 # Description:
-# This script finds all .cbz files in the current directory. For each .cbz file,
-# it extracts the contents, renames each file by adding the .cbz filename as a
-# prefix followed by a dash, and then creates a new .cbz archive with the
+# This script finds all .zip files in the current directory. For each .zip file,
+# it extracts the contents, renames each file by adding the .zip filename as a
+# prefix followed by a dash, and then creates a new .zip archive with the
 # renamed files. The new archive will have the suffix "-renamed".
 #
 # Usage:
 # 1. Open a PowerShell terminal.
-# 2. Navigate to the directory containing your .cbz files.
+# 2. Navigate to the directory containing your .zip files.
 # 3. Run the script by executing: .\rename_cbz_contents.ps1
 
-# Get all .cbz files in the current directory
-$cbzFiles = Get-ChildItem -Path . -Filter *.cbz
+# Get all .zip files in the current directory
+$zipFiles = Get-ChildItem -Path . -Filter *.zip
 
-foreach ($cbzFile in $cbzFiles) {
+foreach ($zipFile in $zipFiles) {
     # Create a temporary directory
-    $tempDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ($cbzFile.BaseName))
+    $tempDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ($zipFile.BaseName))
 
-    # Extract the .cbz file
-    Expand-Archive -Path $cbzFile.FullName -DestinationPath $tempDir.FullName
+    # Extract the .zip file
+    Expand-Archive -Path $zipFile.FullName -DestinationPath $tempDir.FullName
 
-    # Get the base name of the .cbz file
-    $prefix = $cbzFile.BaseName
+    # Get the base name of the .zip file
+    $prefix = $zipFile.BaseName
 
     # Get all extracted files
     $extractedFiles = Get-ChildItem -Path $tempDir.FullName
@@ -33,9 +33,9 @@ foreach ($cbzFile in $cbzFiles) {
         Rename-Item -Path $file.FullName -NewName $newName
     }
 
-    # Create a new .cbz archive with the renamed files
-    $newCbzPath = Join-Path -Path $cbzFile.DirectoryName -ChildPath "$($cbzFile.BaseName)-renamed.cbz"
-    Compress-Archive -Path "$($tempDir.FullName)\*" -DestinationPath $newCbzPath
+    # Create a new .zip archive with the renamed files
+    $newZipPath = Join-Path -Path $zipFile.DirectoryName -ChildPath "$($zipFile.BaseName)-renamed.zip"
+    Compress-Archive -Path "$($tempDir.FullName)\*" -DestinationPath $newZipPath
 
     # Clean up the temporary directory
     Remove-Item -Path $tempDir.FullName -Recurse -Force
